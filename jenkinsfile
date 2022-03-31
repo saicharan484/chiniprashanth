@@ -1,0 +1,88 @@
+pipeline {
+    agent any
+
+ environment {
+
+      sonar_url = 'http://10.128.0.2:9000'
+      sonar_username = 'admin'
+      sonar_password = 'admin'
+      nexus_url = '10.128.0.2:8081'
+      artifact_version = '4.0.0'
+
+ } 
+
+  tools {
+        jdk 'Java8'
+        maven 'Maven3.3.9'
+    }
+    parameters {
+    gitParameter branchFilter: 'main', defaultValue: 'main', name: 'BRANCH', type: 'PT_BRANCH'
+  }
+  stages {
+      
+    stage('git clone') {
+      steps {
+        git branch: "${params.BRANCH}", url: 'https://github.com/saicharan484/chiniprashanth.git'
+      }
+    }
+ 
+  stage('maven build') {
+      steps {
+           sh 'mvn clean install'
+      }
+  }
+ 
+ stage('Sonarqube Analysis'){
+           steps {
+           withSonarQubeEnv('sonarqube') {
+           sh '''
+           mvn -e -B sonar:sonar -Dsonar.java.source=1.8 -Dsonar.host.url="${sonar_url}" -Dsonar.login="${sonar_username}" -Dsonar.password="${sonar_password}" -Dsonar.sourceEncoding=UTF-8
+           '''
+           }
+         }
+      } 
+
+   stage ('Publish Artifact') {
+        steps {
+            nexusArtifactUploader artifacts: [[artifactId: 'gameoflife', classifier: '', file: "/var/lib/jenkins/workspace/test-demo/gameoflife-build/target/gameoflife-build-1.0-SNAPSHOT.jar", type: 'jar']], credentialsId: '3e1c18bd-c1ff-4fc4-93d3-48374854672a', groupId: 'com.wakaleo.gameoflife', nexusUrl: "${nexus_url}", nexusVersion: 'nexus3', protocol: 'http', repository: 'release', version: "${artifact_version}"
+            archiveArtifacts '**/*.jar'
+        }
+      }
+      
+ stage ('Build Docker Image'){
+        steps {
+          sh '''
+          cd ${WORKSPACE}
+          docker build -t gcr.io/ace-beanbag-344406/test:v1 --file=Dockerfile ${WORKSPACE}
+          '''
+        }
+      }
+ stage ('Publish Docker Image'){
+        steps {
+          sh '''
+          docker push  gcr.io/ace-beanbag-344406/test:v1 
+          '''
+        }
+      }
+      stage ('cleanup docker image'){
+        steps {
+            sh 'docker rmi -f $(docker images -aq)'
+        }
+      }
+        stage ('Deploy to kubernetes'){
+        steps{
+          script {
+
+            sh "kubectl config use-context  gke_ace-beanbag-344406_us-central1-a_batch-11 "
+            sh "cd ${WORKSPACE}"
+            sh "kubectl apply -f '${WORKSPACE}'/kube/service.yaml"
+            sh "kubectl apply -f '${WORKSPACE}'/kube/deploy.yaml"
+          
+           }
+          }
+        }
+       
+      
+      
+    }
+}   
