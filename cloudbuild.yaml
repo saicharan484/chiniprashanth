@@ -5,3 +5,17 @@ steps:
 - name: 'gcr.io/cloud-builders/mvn:3.3.9-jdk-8'
   args: ['install']
   dir: 'chiniprashanth/gameoflife-build/'
+  # build the container image
+- name: "gcr.io/cloud-builders/docker"
+  args: ["build", "-t", "gcr.io/ace-beanbag-344406/test:v2", "."]
+  # push container image
+- name: "gcr.io/cloud-builders/docker"
+  args: ["push", "gcr.io/ace-beanbag-344406/test:v2"]
+  # deploy container image to GKE
+- name: "gcr.io/cloud-builders/gke-deploy"
+  args:
+  - run
+  - --filename=kube
+  - --image=gcr.io/ace-beanbag-344406/test:v2
+  - --location=us-central1-a
+  - --cluster=batch-11
